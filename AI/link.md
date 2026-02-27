@@ -1,0 +1,6 @@
+- Docs:
+  - ./docs
+  - https://docs.euler.finance/developers/evc/
+- EVC Standalone Portal: https://evc.wtf/docs/contracts/ethereum-vault-connector-contracts/
+- Blog:
+  - https://www.cyfrin.io/blog/how-vault-withdrawals-work-in-eulerswap-full-flow-explained
