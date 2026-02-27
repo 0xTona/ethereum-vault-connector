@@ -20,6 +20,17 @@ abstract contract TransientStorage {
         Vault
     }
 
+    //@note
+    //Intention
+    //  EC: current execution context that vault can use
+    //  accountStatusChecks, vaultStatusChecks: set of deferred-check address
+    //Follow-up
+    //  A) What is "check"?
+    //      - vault check: vault call evc.requireAccountAndVaultStatusCheck() -> evc call vault.checkVaultStatus()
+    //          The vault itself must call `requireAccountAndVaultStatusCheck()` properly, and define rule of health check in `checkVaultStatus()`
+    //`     - account check: vault call evc.requireAccountAndVaultStatusCheck() -> evc call controller.checkAccountStatus()
+    //          The controller must define rule of health check in `checkAccountStatus()`
+    //          If don't have controller -> the account check is considered passed by default
     EC internal executionContext;
     SetStorage internal accountStatusChecks;
     SetStorage internal vaultStatusChecks;

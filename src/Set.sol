@@ -68,11 +68,21 @@ library Set {
     /// @param element The element to be inserted.
     /// @return A boolean value that indicates whether the element was inserted or not. If the element was already in
     /// the set storage, it returns false.
-    function insert(SetStorage storage setStorage, address element) internal returns (bool) {
+    function insert(
+        SetStorage storage setStorage,
+        address element
+    ) internal returns (bool) {
+        //@note
+        //Intention
+        //  1) Insert first element if setStorage is empty
+        //  2) Ensure that the element is not already in the set
+        //  3) Insert the element
+
         address firstElement = setStorage.firstElement;
         uint256 numElements = setStorage.numElements;
         uint80 metadata = setStorage.metadata;
 
+        //1 {
         if (numElements == 0) {
             // gas optimization:
             // on the first element insertion, set the stamp to non-zero value to keep the storage slot non-zero when
@@ -83,20 +93,23 @@ library Set {
             setStorage.stamp = DUMMY_STAMP;
             return true;
         }
+        //} 1
 
+        //2 {
         if (firstElement == element) return false;
-
         for (uint256 i = EMPTY_ELEMENT_OFFSET; i < numElements; ++i) {
             if (setStorage.elements[i].value == element) return false;
         }
 
         if (numElements == SET_MAX_ELEMENTS) revert TooManyElements();
+        //} 2
 
+        //3 {
         setStorage.elements[numElements].value = element;
-
         unchecked {
             setStorage.numElements = uint8(numElements + 1);
         }
+        //} 3
 
         return true;
     }
@@ -109,7 +122,10 @@ library Set {
     /// @param element The element to be removed.
     /// @return A boolean value that indicates whether the element was removed or not. If the element was not in the set
     /// storage, it returns false.
-    function remove(SetStorage storage setStorage, address element) internal returns (bool) {
+    function remove(
+        SetStorage storage setStorage,
+        address element
+    ) internal returns (bool) {
         address firstElement = setStorage.firstElement;
         uint256 numElements = setStorage.numElements;
         uint80 metadata = setStorage.metadata;
@@ -118,7 +134,11 @@ library Set {
 
         uint256 searchIndex;
         if (firstElement != element) {
-            for (searchIndex = EMPTY_ELEMENT_OFFSET; searchIndex < numElements; ++searchIndex) {
+            for (
+                searchIndex = EMPTY_ELEMENT_OFFSET;
+                searchIndex < numElements;
+                ++searchIndex
+            ) {
                 if (setStorage.elements[searchIndex].value == element) break;
             }
 
@@ -175,7 +195,11 @@ library Set {
     /// @param setStorage The set storage for which the elements will be swapped.
     /// @param index1 The index of the first element to be swapped.
     /// @param index2 The index of the second element to be swapped.
-    function reorder(SetStorage storage setStorage, uint8 index1, uint8 index2) internal {
+    function reorder(
+        SetStorage storage setStorage,
+        uint8 index1,
+        uint8 index2
+    ) internal {
         address firstElement = setStorage.firstElement;
         uint256 numElements = setStorage.numElements;
 
@@ -184,18 +208,28 @@ library Set {
         }
 
         if (index1 == 0) {
-            (setStorage.firstElement, setStorage.elements[index2].value) =
-                (setStorage.elements[index2].value, firstElement);
+            (setStorage.firstElement, setStorage.elements[index2].value) = (
+                setStorage.elements[index2].value,
+                firstElement
+            );
         } else {
-            (setStorage.elements[index1].value, setStorage.elements[index2].value) =
-                (setStorage.elements[index2].value, setStorage.elements[index1].value);
+            (
+                setStorage.elements[index1].value,
+                setStorage.elements[index2].value
+            ) = (
+                setStorage.elements[index2].value,
+                setStorage.elements[index1].value
+            );
         }
     }
 
     /// @notice Sets the metadata for the set storage.
     /// @param setStorage The storage structure where metadata will be set.
     /// @param metadata The metadata value to set.
-    function setMetadata(SetStorage storage setStorage, uint80 metadata) internal {
+    function setMetadata(
+        SetStorage storage setStorage,
+        uint80 metadata
+    ) internal {
         setStorage.metadata = metadata;
     }
 
@@ -203,7 +237,9 @@ library Set {
     /// @dev The order of the elements in the array may be affected by performing operations on the set.
     /// @param setStorage The set storage to be processed.
     /// @return An array that contains the same elements as the set storage.
-    function get(SetStorage storage setStorage) internal view returns (address[] memory) {
+    function get(
+        SetStorage storage setStorage
+    ) internal view returns (address[] memory) {
         address firstElement = setStorage.firstElement;
         uint256 numElements = setStorage.numElements;
         address[] memory output = new address[](numElements);
@@ -222,7 +258,9 @@ library Set {
     /// @notice Retrieves the metadata from the set storage.
     /// @param setStorage The storage structure from which metadata is retrieved.
     /// @return The metadata value.
-    function getMetadata(SetStorage storage setStorage) internal view returns (uint80) {
+    function getMetadata(
+        SetStorage storage setStorage
+    ) internal view returns (uint80) {
         return setStorage.metadata;
     }
 
@@ -231,7 +269,10 @@ library Set {
     /// @param setStorage The set storage to be searched.
     /// @param element The element to be searched for.
     /// @return A boolean value that indicates whether the set storage includes the element or not.
-    function contains(SetStorage storage setStorage, address element) internal view returns (bool) {
+    function contains(
+        SetStorage storage setStorage,
+        address element
+    ) internal view returns (bool) {
         address firstElement = setStorage.firstElement;
         uint256 numElements = setStorage.numElements;
 
@@ -251,26 +292,46 @@ library Set {
     /// modify the metadata of the set.
     /// @param setStorage The set storage to be processed.
     /// @param callback The function to be applied to each element.
-    function forEachAndClear(SetStorage storage setStorage, function(address) callback) internal {
+    function forEachAndClear(
+        SetStorage storage setStorage,
+        function(address) callback
+    ) internal {
+        //@note
+        //Intention
+        //  1) Early return if the set is empty
+        //  2) Clear the set storage and apply the callback function to the first element
+        //  3) Clear the set storage and apply the callback function to the rest of set elements
+        //Follow-up
+        //  2,3) fuction type?
+        //      -> https://docs.soliditylang.org/en/latest/types.html#function-types
+
         uint256 numElements = setStorage.numElements;
         address firstElement = setStorage.firstElement;
         uint80 metadata = setStorage.metadata;
 
+        //1
         if (numElements == 0) return;
 
+        //2 {
         setStorage.numElements = 0;
         setStorage.firstElement = address(0);
         setStorage.metadata = metadata;
         setStorage.stamp = DUMMY_STAMP;
 
         callback(firstElement);
+        //} 2
 
+        //3 {
         for (uint256 i = EMPTY_ELEMENT_OFFSET; i < numElements; ++i) {
             address element = setStorage.elements[i].value;
-            setStorage.elements[i] = ElementStorage({value: address(0), stamp: DUMMY_STAMP});
+            setStorage.elements[i] = ElementStorage({
+                value: address(0),
+                stamp: DUMMY_STAMP
+            });
 
             callback(element);
         }
+        //} 3
     }
 
     /// @notice Iterates over each element in the set and applies the callback function to it, returning the array of
@@ -286,6 +347,10 @@ library Set {
         SetStorage storage setStorage,
         function(address) returns (bool, bytes memory) callback
     ) internal returns (bytes[] memory) {
+        //@note
+        //Intention
+        //  Same as forEachAndClear function but with results returned by the callback function
+
         uint256 numElements = setStorage.numElements;
         address firstElement = setStorage.firstElement;
         uint80 metadata = setStorage.metadata;
@@ -303,7 +368,10 @@ library Set {
 
         for (uint256 i = EMPTY_ELEMENT_OFFSET; i < numElements; ++i) {
             address element = setStorage.elements[i].value;
-            setStorage.elements[i] = ElementStorage({value: address(0), stamp: DUMMY_STAMP});
+            setStorage.elements[i] = ElementStorage({
+                value: address(0),
+                stamp: DUMMY_STAMP
+            });
 
             (success, result) = callback(element);
             results[i] = abi.encode(element, success, result);

@@ -27,16 +27,21 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     string public constant name = "Ethereum Vault Connector";
 
     uint160 internal constant ACCOUNT_ID_OFFSET = 8;
-    address internal constant EIP_7587_PRECOMPILES = 0x0000000000000000000000000000000000000100;
-    address internal constant COMMON_PREDEPLOYS = 0x4200000000000000000000000000000000000000;
+    address internal constant EIP_7587_PRECOMPILES =
+        0x0000000000000000000000000000000000000100;
+    address internal constant COMMON_PREDEPLOYS =
+        0x4200000000000000000000000000000000000000;
     bytes32 internal constant HASHED_NAME = keccak256(bytes(name));
 
     bytes32 internal constant TYPE_HASH =
-        keccak256("EIP712Domain(string name,uint256 chainId,address verifyingContract)");
+        keccak256(
+            "EIP712Domain(string name,uint256 chainId,address verifyingContract)"
+        );
 
-    bytes32 internal constant PERMIT_TYPEHASH = keccak256(
-        "Permit(address signer,address sender,uint256 nonceNamespace,uint256 nonce,uint256 deadline,uint256 value,bytes data)"
-    );
+    bytes32 internal constant PERMIT_TYPEHASH =
+        keccak256(
+            "Permit(address signer,address sender,uint256 nonceNamespace,uint256 nonce,uint256 deadline,uint256 value,bytes data)"
+        );
 
     uint256 internal immutable CACHED_CHAIN_ID;
     bytes32 internal immutable CACHED_DOMAIN_SEPARATOR;
@@ -75,11 +80,22 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
         bool isPermitDisabledMode;
     }
 
+    //@note
+    //Intention
+    //  owner:          [prefix(248)][last bits(8)]
+    //  account:        [prefix(248)][index(8)]
+    //  = sub-account of whitepaper
+    //  = onBehalfOfAccount of some funcs, EC
+    //  addressPrefix:  [00000000][prefix(248)]
+    //Follow-up
+    //  Why save a set of account controllers?
     mapping(bytes19 addressPrefix => OwnerStorage) internal ownerLookup;
 
-    mapping(bytes19 addressPrefix => mapping(address operator => uint256 operatorBitField)) internal operatorLookup;
+    mapping(bytes19 addressPrefix => mapping(address operator => uint256 operatorBitField))
+        internal operatorLookup;
 
-    mapping(bytes19 addressPrefix => mapping(uint256 nonceNamespace => uint256 nonce)) internal nonceLookup;
+    mapping(bytes19 addressPrefix => mapping(uint256 nonceNamespace => uint256 nonce))
+        internal nonceLookup;
 
     mapping(address account => SetStorage) internal accountCollaterals;
 
@@ -111,7 +127,11 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     /// will be) as an owner in the ownerLookup.
     /// @param addressPrefix The address prefix for which it is checked whether the caller is the owner.
     modifier onlyOwner(bytes19 addressPrefix) {
-        authenticateCaller({addressPrefix: addressPrefix, allowOperator: false, checkLockdownMode: false});
+        authenticateCaller({
+            addressPrefix: addressPrefix,
+            allowOperator: false,
+            checkLockdownMode: false
+        });
 
         _;
     }
@@ -123,7 +143,11 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     /// @param account The address of the account for which it is checked whether the caller is the owner or an
     /// operator.
     modifier onlyOwnerOrOperator(address account) {
-        authenticateCaller({account: account, allowOperator: true, checkLockdownMode: true});
+        authenticateCaller({
+            account: account,
+            allowOperator: true,
+            checkLockdownMode: true
+        });
 
         _;
     }
@@ -159,6 +183,14 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     /// @notice A modifier that verifies whether account or vault status checks are re-entered as well as checks for
     /// controlCollateral re-entrancy.
     modifier nonReentrantChecksAndControlCollateral() {
+        //@note
+        //Intention
+        //  Ensure CHECKS_IN_PROGRESS, CONTROL_COLLATERAL_IN_PROGRESS are not set
+        //Follow-up
+        //  A) Where are they set?
+        //      - CHECKS_IN_PROGRESS is set in `nonReentrantChecksAcquireLock` modifier
+        //      - CONTROL_COLLATERAL_IN_PROGRESS is set in `controlCollateral` function
+
         {
             EC context = executionContext;
 
@@ -178,13 +210,20 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     /// @dev This modifier also clears the current account on behalf of which the operation is performed as it shouldn't
     /// be relied upon when the checks are in progress.
     modifier nonReentrantChecksAcquireLock() {
+        //@note
+        //Intention
+        //  Ensure not in check progress before
+        //  Set CHECKS_IN_PROGRESS, clear onBehalfOfAccount
+
         EC contextCache = executionContext;
 
         if (contextCache.areChecksInProgress()) {
             revert EVC_ChecksReentrancy();
         }
 
-        executionContext = contextCache.setChecksInProgress().setOnBehalfOfAccount(address(0));
+        executionContext = contextCache
+            .setChecksInProgress()
+            .setOnBehalfOfAccount(address(0));
 
         _;
 
@@ -203,7 +242,9 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     }
 
     /// @inheritdoc IEVC
-    function getCurrentOnBehalfOfAccount(address controllerToCheck)
+    function getCurrentOnBehalfOfAccount(
+        address controllerToCheck
+    )
         external
         view
         returns (address onBehalfOfAccount, bool controllerEnabled)
@@ -215,8 +256,9 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
             revert EVC_OnBehalfOfAccountNotAuthenticated();
         }
 
-        controllerEnabled =
-            controllerToCheck == address(0) ? false : accountControllers[onBehalfOfAccount].contains(controllerToCheck);
+        controllerEnabled = controllerToCheck == address(0)
+            ? false
+            : accountControllers[onBehalfOfAccount].contains(controllerToCheck);
     }
 
     /// @inheritdoc IEVC
@@ -247,7 +289,10 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     // Owners and operators
 
     /// @inheritdoc IEVC
-    function haveCommonOwner(address account, address otherAccount) external pure returns (bool) {
+    function haveCommonOwner(
+        address account,
+        address otherAccount
+    ) external pure returns (bool) {
         return haveCommonOwnerInternal(account, otherAccount);
     }
 
@@ -263,37 +308,56 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     }
 
     /// @inheritdoc IEVC
-    function isLockdownMode(bytes19 addressPrefix) external view returns (bool) {
+    function isLockdownMode(
+        bytes19 addressPrefix
+    ) external view returns (bool) {
         return ownerLookup[addressPrefix].isLockdownMode;
     }
 
     /// @inheritdoc IEVC
-    function isPermitDisabledMode(bytes19 addressPrefix) external view returns (bool) {
+    function isPermitDisabledMode(
+        bytes19 addressPrefix
+    ) external view returns (bool) {
         return ownerLookup[addressPrefix].isPermitDisabledMode;
     }
 
     /// @inheritdoc IEVC
-    function getNonce(bytes19 addressPrefix, uint256 nonceNamespace) external view returns (uint256) {
+    function getNonce(
+        bytes19 addressPrefix,
+        uint256 nonceNamespace
+    ) external view returns (uint256) {
         return nonceLookup[addressPrefix][nonceNamespace];
     }
 
     /// @inheritdoc IEVC
-    function getOperator(bytes19 addressPrefix, address operator) external view returns (uint256) {
+    function getOperator(
+        bytes19 addressPrefix,
+        address operator
+    ) external view returns (uint256) {
         return operatorLookup[addressPrefix][operator];
     }
 
     /// @inheritdoc IEVC
-    function isAccountOperatorAuthorized(address account, address operator) external view returns (bool) {
+    function isAccountOperatorAuthorized(
+        address account,
+        address operator
+    ) external view returns (bool) {
         return isAccountOperatorAuthorizedInternal(account, operator);
     }
 
     /// @inheritdoc IEVC
-    function setLockdownMode(bytes19 addressPrefix, bool enabled) public payable virtual onlyOwner(addressPrefix) {
+    function setLockdownMode(
+        bytes19 addressPrefix,
+        bool enabled
+    ) public payable virtual onlyOwner(addressPrefix) {
         if (ownerLookup[addressPrefix].isLockdownMode != enabled) {
             // to increase user security, it is prohibited to disable this mode within the self-call of the permit
             // function or within a checks-deferrable call. to disable this mode, the setLockdownMode function must be
             // called directly
-            if (!enabled && (executionContext.areChecksDeferred() || inPermitSelfCall())) {
+            if (
+                !enabled &&
+                (executionContext.areChecksDeferred() || inPermitSelfCall())
+            ) {
                 revert EVC_NotAuthorized();
             }
 
@@ -340,12 +404,22 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     /// @inheritdoc IEVC
     /// @dev Uses authenticateCaller() function instead of onlyOwner() modifier to authenticate and get the caller
     /// address at once.
-    function setOperator(bytes19 addressPrefix, address operator, uint256 operatorBitField) public payable virtual {
-        address msgSender =
-            authenticateCaller({addressPrefix: addressPrefix, allowOperator: false, checkLockdownMode: false});
+    function setOperator(
+        bytes19 addressPrefix,
+        address operator,
+        uint256 operatorBitField
+    ) public payable virtual {
+        address msgSender = authenticateCaller({
+            addressPrefix: addressPrefix,
+            allowOperator: false,
+            checkLockdownMode: false
+        });
 
         // the operator can neither be the EVC nor can be one of 256 accounts of the owner
-        if (operator == address(this) || haveCommonOwnerInternal(msgSender, operator)) {
+        if (
+            operator == address(this) ||
+            haveCommonOwnerInternal(msgSender, operator)
+        ) {
             revert EVC_InvalidAddress();
         }
 
@@ -361,15 +435,25 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     /// @inheritdoc IEVC
     /// @dev Uses authenticateCaller() function instead of onlyOwnerOrOperator() modifier to authenticate and get the
     /// caller address at once.
-    function setAccountOperator(address account, address operator, bool authorized) public payable virtual {
-        address msgSender = authenticateCaller({account: account, allowOperator: true, checkLockdownMode: false});
+    function setAccountOperator(
+        address account,
+        address operator,
+        bool authorized
+    ) public payable virtual {
+        address msgSender = authenticateCaller({
+            account: account,
+            allowOperator: true,
+            checkLockdownMode: false
+        });
         bytes19 addressPrefix = getAddressPrefixInternal(account);
 
         // if the account and the caller have a common owner, the caller must be the owner. if the account and the
         // caller don't have a common owner, the caller must be an operator and the owner address is taken from the
         // storage. the caller authentication above guarantees that the account owner is already registered hence
         // non-zero
-        address owner = haveCommonOwnerInternal(account, msgSender) ? msgSender : ownerLookup[addressPrefix].owner;
+        address owner = haveCommonOwnerInternal(account, msgSender)
+            ? msgSender
+            : ownerLookup[addressPrefix].owner;
 
         // if it's an operator calling, it can only act for itself and must not be able to change other operators status
         if (owner != msgSender && operator != msgSender) {
@@ -377,7 +461,10 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
         }
 
         // the operator can neither be the EVC nor can be one of 256 accounts of the owner
-        if (operator == address(this) || haveCommonOwnerInternal(owner, operator)) {
+        if (
+            operator == address(this) ||
+            haveCommonOwnerInternal(owner, operator)
+        ) {
             revert EVC_InvalidAddress();
         }
 
@@ -389,7 +476,9 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
         // The operatorBitField is a 256-position binary array, where each 1 signals by position the account that the
         // operator is authorized for.
         uint256 oldOperatorBitField = operatorLookup[addressPrefix][operator];
-        uint256 newOperatorBitField = authorized ? oldOperatorBitField | bitMask : oldOperatorBitField & ~bitMask;
+        uint256 newOperatorBitField = authorized
+            ? oldOperatorBitField | bitMask
+            : oldOperatorBitField & ~bitMask;
 
         if (oldOperatorBitField == newOperatorBitField) {
             revert EVC_InvalidOperatorStatus();
@@ -403,12 +492,17 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     // Collaterals management
 
     /// @inheritdoc IEVC
-    function getCollaterals(address account) external view returns (address[] memory) {
+    function getCollaterals(
+        address account
+    ) external view returns (address[] memory) {
         return accountCollaterals[account].get();
     }
 
     /// @inheritdoc IEVC
-    function isCollateralEnabled(address account, address vault) external view returns (bool) {
+    function isCollateralEnabled(
+        address account,
+        address vault
+    ) external view returns (bool) {
         return accountCollaterals[account].contains(vault);
     }
 
@@ -416,12 +510,19 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     function enableCollateral(
         address account,
         address vault
-    ) public payable virtual nonReentrantChecksAndControlCollateral onlyOwnerOrOperator(account) {
+    )
+        public
+        payable
+        virtual
+        nonReentrantChecksAndControlCollateral
+        onlyOwnerOrOperator(account)
+    {
         if (vault == address(this)) revert EVC_InvalidAddress();
 
         if (accountCollaterals[account].insert(vault)) {
             emit CollateralStatus(account, vault, true);
         }
+
         requireAccountStatusCheck(account);
     }
 
@@ -429,7 +530,13 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     function disableCollateral(
         address account,
         address vault
-    ) public payable virtual nonReentrantChecksAndControlCollateral onlyOwnerOrOperator(account) {
+    )
+        public
+        payable
+        virtual
+        nonReentrantChecksAndControlCollateral
+        onlyOwnerOrOperator(account)
+    {
         if (accountCollaterals[account].remove(vault)) {
             emit CollateralStatus(account, vault, false);
         }
@@ -441,7 +548,13 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
         address account,
         uint8 index1,
         uint8 index2
-    ) public payable virtual nonReentrantChecksAndControlCollateral onlyOwnerOrOperator(account) {
+    )
+        public
+        payable
+        virtual
+        nonReentrantChecksAndControlCollateral
+        onlyOwnerOrOperator(account)
+    {
         accountCollaterals[account].reorder(index1, index2);
         requireAccountStatusCheck(account);
     }
@@ -449,12 +562,17 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     // Controllers management
 
     /// @inheritdoc IEVC
-    function getControllers(address account) external view returns (address[] memory) {
+    function getControllers(
+        address account
+    ) external view returns (address[] memory) {
         return accountControllers[account].get();
     }
 
     /// @inheritdoc IEVC
-    function isControllerEnabled(address account, address vault) external view returns (bool) {
+    function isControllerEnabled(
+        address account,
+        address vault
+    ) external view returns (bool) {
         return accountControllers[account].contains(vault);
     }
 
@@ -462,7 +580,13 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     function enableController(
         address account,
         address vault
-    ) public payable virtual nonReentrantChecksAndControlCollateral onlyOwnerOrOperator(account) {
+    )
+        public
+        payable
+        virtual
+        nonReentrantChecksAndControlCollateral
+        onlyOwnerOrOperator(account)
+    {
         if (vault == address(this)) revert EVC_InvalidAddress();
 
         if (accountControllers[account].insert(vault)) {
@@ -472,7 +596,9 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     }
 
     /// @inheritdoc IEVC
-    function disableController(address account) public payable virtual nonReentrantChecksAndControlCollateral {
+    function disableController(
+        address account
+    ) public payable virtual nonReentrantChecksAndControlCollateral {
         if (accountControllers[account].remove(msg.sender)) {
             emit ControllerStatus(account, msg.sender, false);
         }
@@ -495,7 +621,9 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
         // cannot be called within the self-call of the permit function; can occur for nested calls.
         // the permit function can be called only by the specified sender, unless address zero is specified in which
         // case anyone can call it
-        if (inPermitSelfCall() || (sender != address(0) && sender != msg.sender)) {
+        if (
+            inPermitSelfCall() || (sender != address(0) && sender != msg.sender)
+        ) {
             revert EVC_NotAuthorized();
         }
 
@@ -525,11 +653,19 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
             revert EVC_InvalidData();
         }
 
-        bytes32 permitHash = getPermitHash(signer, sender, nonceNamespace, nonce, deadline, value, data);
+        bytes32 permitHash = getPermitHash(
+            signer,
+            sender,
+            nonceNamespace,
+            nonce,
+            deadline,
+            value,
+            data
+        );
 
         if (
-            signer != recoverECDSASigner(permitHash, signature)
-                && !isValidERC1271Signature(signer, permitHash, signature)
+            signer != recoverECDSASigner(permitHash, signature) &&
+            !isValidERC1271Signature(signer, permitHash, signature)
         ) {
             revert EVC_NotAuthorized();
         }
@@ -542,7 +678,12 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
 
         // EVC address becomes the msg.sender for the duration this self-call, no authentication is required here.
         // the signer will be later on authenticated as per data, depending on the functions that will be called
-        (bool success, bytes memory result) = callWithContextInternal(address(this), signer, value, data);
+        (bool success, bytes memory result) = callWithContextInternal(
+            address(this),
+            signer,
+            value,
+            data
+        );
 
         if (!success) revertBytes(result);
     }
@@ -555,15 +696,42 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
         address onBehalfOfAccount,
         uint256 value,
         bytes calldata data
-    ) public payable virtual nonReentrantChecksAndControlCollateral returns (bytes memory result) {
+    )
+        public
+        payable
+        virtual
+        nonReentrantChecksAndControlCollateral
+        returns (bytes memory result)
+    {
+        //@note
+        //Intention
+        //  Simple one‑off operations
+        //      1) Validation
+        //          nonReentrantChecksAndControlCollateral
+        //      2) Defer checks
+        //      3) Call
+        //      4) Restore context
+        //Follow-up
+        //  2)
+        //      A) defer checks here?
+        //          -> Only defer check until 3) and execute check at 4)
+
         EC contextCache = executionContext;
+        //2
         executionContext = contextCache.setChecksDeferred();
 
+        //3 {
         bool success;
-        (success, result) = callWithAuthenticationInternal(targetContract, onBehalfOfAccount, value, data);
-
+        (success, result) = callWithAuthenticationInternal(
+            targetContract,
+            onBehalfOfAccount,
+            value,
+            data
+        );
         if (!success) revertBytes(result);
+        //} 3
 
+        //4
         restoreExecutionContext(contextCache);
     }
 
@@ -581,31 +749,67 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
         onlyController(onBehalfOfAccount)
         returns (bytes memory result)
     {
+        //@note
+        //Intention
+        //  1) Validation
+        //      nonReentrantChecksAndControlCollateral
+        //      `msg.sender` is controller of `onBehalfOfAccount`
+        //      `targetCollateral` is enabled as collateral for `onBehalfOfAccount`
+        //  2) Defer check, set control collateral in progress
+        //  3) Call
+        //  4) Restore context
+
+        //-1 {
         if (!accountCollaterals[onBehalfOfAccount].contains(targetCollateral)) {
             revert EVC_NotAuthorized();
         }
+        //} 1
 
+        //2 {
         EC contextCache = executionContext;
-        executionContext = contextCache.setChecksDeferred().setControlCollateralInProgress();
+        executionContext = contextCache
+            .setChecksDeferred()
+            .setControlCollateralInProgress();
+        //} 2
 
+        //3 {
         bool success;
-        (success, result) = callWithContextInternal(targetCollateral, onBehalfOfAccount, value, data);
-
+        (success, result) = callWithContextInternal(
+            targetCollateral,
+            onBehalfOfAccount,
+            value,
+            data
+        );
         if (!success) revertBytes(result);
+        //} 3
 
+        //4
         restoreExecutionContext(contextCache);
     }
 
     /// @inheritdoc IEVC
-    function batch(BatchItem[] calldata items) public payable virtual nonReentrantChecksAndControlCollateral {
+    function batch(
+        BatchItem[] calldata items
+    ) public payable virtual nonReentrantChecksAndControlCollateral {
+        //@note
+        //Intention
+        //  Same as `call()` but sequence of calls
+
         EC contextCache = executionContext;
         executionContext = contextCache.setChecksDeferred();
 
         uint256 length = items.length;
         for (uint256 i; i < length; ++i) {
             BatchItem calldata item = items[i];
-            (bool success, bytes memory result) =
-                callWithAuthenticationInternal(item.targetContract, item.onBehalfOfAccount, item.value, item.data);
+            (
+                bool success,
+                bytes memory result
+            ) = callWithAuthenticationInternal(
+                    item.targetContract,
+                    item.onBehalfOfAccount,
+                    item.value,
+                    item.data
+                );
 
             if (!success) revertBytes(result);
         }
@@ -616,7 +820,9 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     // Simulations
 
     /// @inheritdoc IEVC
-    function batchRevert(BatchItem[] calldata items) public payable virtual nonReentrantChecksAndControlCollateral {
+    function batchRevert(
+        BatchItem[] calldata items
+    ) public payable virtual nonReentrantChecksAndControlCollateral {
         BatchItemResult[] memory batchItemsResult;
         StatusCheckResult[] memory accountsStatusCheckResult;
         StatusCheckResult[] memory vaultsStatusCheckResult;
@@ -627,29 +833,46 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
             revert EVC_SimulationBatchNested();
         }
 
-        executionContext = contextCache.setChecksDeferred().setSimulationInProgress();
+        executionContext = contextCache
+            .setChecksDeferred()
+            .setSimulationInProgress();
 
         uint256 length = items.length;
         batchItemsResult = new BatchItemResult[](length);
 
         for (uint256 i; i < length; ++i) {
             BatchItem calldata item = items[i];
-            (batchItemsResult[i].success, batchItemsResult[i].result) =
-                callWithAuthenticationInternal(item.targetContract, item.onBehalfOfAccount, item.value, item.data);
+            (
+                batchItemsResult[i].success,
+                batchItemsResult[i].result
+            ) = callWithAuthenticationInternal(
+                item.targetContract,
+                item.onBehalfOfAccount,
+                item.value,
+                item.data
+            );
         }
 
-        executionContext = contextCache.setChecksInProgress().setOnBehalfOfAccount(address(0));
+        executionContext = contextCache
+            .setChecksInProgress()
+            .setOnBehalfOfAccount(address(0));
 
         accountsStatusCheckResult = checkStatusAllWithResult(SetType.Account);
         vaultsStatusCheckResult = checkStatusAllWithResult(SetType.Vault);
 
         executionContext = contextCache;
 
-        revert EVC_RevertedBatchResult(batchItemsResult, accountsStatusCheckResult, vaultsStatusCheckResult);
+        revert EVC_RevertedBatchResult(
+            batchItemsResult,
+            accountsStatusCheckResult,
+            vaultsStatusCheckResult
+        );
     }
 
     /// @inheritdoc IEVC
-    function batchSimulation(BatchItem[] calldata items)
+    function batchSimulation(
+        BatchItem[] calldata items
+    )
         external
         payable
         virtual
@@ -659,11 +882,16 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
             StatusCheckResult[] memory vaultsStatusCheckResult
         )
     {
-        (bool success, bytes memory result) = address(this).delegatecall(abi.encodeCall(this.batchRevert, items));
+        (bool success, bytes memory result) = address(this).delegatecall(
+            abi.encodeCall(this.batchRevert, items)
+        );
 
         if (success) {
             revert EVC_BatchPanic();
-        } else if (result.length < 4 || bytes4(result) != EVC_RevertedBatchResult.selector) {
+        } else if (
+            result.length < 4 ||
+            bytes4(result) != EVC_RevertedBatchResult.selector
+        ) {
             revertBytes(result);
         }
 
@@ -676,19 +904,29 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
             mstore(result, sub(length, 4))
         }
 
-        (batchItemsResult, accountsStatusCheckResult, vaultsStatusCheckResult) =
-            abi.decode(result, (BatchItemResult[], StatusCheckResult[], StatusCheckResult[]));
+        (
+            batchItemsResult,
+            accountsStatusCheckResult,
+            vaultsStatusCheckResult
+        ) = abi.decode(
+            result,
+            (BatchItemResult[], StatusCheckResult[], StatusCheckResult[])
+        );
     }
 
     // Account Status Check
 
     /// @inheritdoc IEVC
-    function getLastAccountStatusCheckTimestamp(address account) external view nonReentrantChecks returns (uint256) {
+    function getLastAccountStatusCheckTimestamp(
+        address account
+    ) external view nonReentrantChecks returns (uint256) {
         return accountControllers[account].getMetadata();
     }
 
     /// @inheritdoc IEVC
-    function isAccountStatusCheckDeferred(address account) external view nonReentrantChecks returns (bool) {
+    function isAccountStatusCheckDeferred(
+        address account
+    ) external view nonReentrantChecks returns (bool) {
         return accountStatusChecks.contains(account);
     }
 
@@ -702,7 +940,9 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     }
 
     /// @inheritdoc IEVC
-    function forgiveAccountStatusCheck(address account)
+    function forgiveAccountStatusCheck(
+        address account
+    )
         public
         payable
         virtual
@@ -715,7 +955,9 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     // Vault Status Check
 
     /// @inheritdoc IEVC
-    function isVaultStatusCheckDeferred(address vault) external view nonReentrantChecks returns (bool) {
+    function isVaultStatusCheckDeferred(
+        address vault
+    ) external view nonReentrantChecks returns (bool) {
         return vaultStatusChecks.contains(vault);
     }
 
@@ -729,12 +971,26 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     }
 
     /// @inheritdoc IEVC
-    function forgiveVaultStatusCheck() public payable virtual nonReentrantChecksAcquireLock {
+    function forgiveVaultStatusCheck()
+        public
+        payable
+        virtual
+        nonReentrantChecksAcquireLock
+    {
         vaultStatusChecks.remove(msg.sender);
     }
 
     /// @inheritdoc IEVC
-    function requireAccountAndVaultStatusCheck(address account) public payable virtual {
+    function requireAccountAndVaultStatusCheck(
+        address account
+    ) public payable virtual {
+        //@note
+        //Intention
+        //  1) Insert account, vault for later check
+        //  2) Check intermediately
+        //Assumption
+        //  msg.sender = vault
+
         if (executionContext.areChecksDeferred()) {
             accountStatusChecks.insert(account);
             vaultStatusChecks.insert(msg.sender);
@@ -760,12 +1016,36 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
         bool allowOperator,
         bool checkLockdownMode
     ) internal virtual returns (address) {
+        //@note
+        //Intention
+        //  1) Load context
+        //  2) authenticate caller
+        //      2.1) if `account` is a sub-account of `msg.sender`
+        //          - if `addressPrefix` is not registered (`msg.sender` and all addresses with same prefix don't interact with EVC before)
+        //              -> register this `addressPrefix` with `msg.sender` as owner
+        //              -> authenticated
+        //          - else if `addressPrefix` is registered && `msg.sender` is the owner
+        //              -> authenticated
+        //          - else
+        //              -> `msg.sender` can only be other addresses with the same prefix, but not the owner, so not authenticated
+        //      2.2) if care about operator (`allowOperator == true`) && `msg.sender` is an operator of the account
+        //          -> authenticated
+        //      2.3) Only owner can authenticate a smart contract sub-account
+        //  3) post checks
+        //      3.1) revert if not authenticated
+        //      3.2) revert if care about lockdownMode (`checkLockdownMode == true`) && account is in lockdown mode
+        //Follow-up
+        //  2.3) Why? What is the problem with smart contract sub-account?
+
+        //1 {
         bytes19 addressPrefix = getAddressPrefixInternal(account);
         address owner = ownerLookup[addressPrefix].owner;
         bool lockdownMode = ownerLookup[addressPrefix].isLockdownMode;
         address msgSender = _msgSender();
         bool authenticated = false;
+        //} 1
 
+        //2 {
         // check if the caller is the owner of the account
         if (haveCommonOwnerInternal(account, msgSender)) {
             // if the owner is not registered, register it
@@ -779,7 +1059,11 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
         }
 
         // if the caller is not the owner, check if it is an operator if operators are allowed
-        if (!authenticated && allowOperator && isAccountOperatorAuthorizedInternal(account, msgSender)) {
+        if (
+            !authenticated &&
+            allowOperator &&
+            isAccountOperatorAuthorizedInternal(account, msgSender)
+        ) {
             authenticated = true;
         }
 
@@ -787,7 +1071,9 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
         if (authenticated && owner != account && account.code.length != 0) {
             authenticated = false;
         }
+        //} 2
 
+        //3 {
         // must revert if neither the owner nor the operator were authenticated
         if (!authenticated) {
             revert EVC_NotAuthorized();
@@ -797,6 +1083,7 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
         if (checkLockdownMode && lockdownMode) {
             revert EVC_LockdownMode();
         }
+        //} 3
 
         return msgSender;
     }
@@ -816,11 +1103,16 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     ) internal virtual returns (address) {
         address owner = ownerLookup[addressPrefix].owner;
 
-        return authenticateCaller({
-            account: owner == address(0) ? address(uint160(uint152(addressPrefix)) << ACCOUNT_ID_OFFSET) : owner,
-            allowOperator: allowOperator,
-            checkLockdownMode: checkLockdownMode
-        });
+        return
+            authenticateCaller({
+                account: owner == address(0)
+                    ? address(
+                        uint160(uint152(addressPrefix)) << ACCOUNT_ID_OFFSET
+                    )
+                    : owner,
+                allowOperator: allowOperator,
+                checkLockdownMode: checkLockdownMode
+            });
     }
 
     /// @notice Internal function to make a call to a target contract with a specific context.
@@ -835,6 +1127,23 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
         uint256 value,
         bytes calldata data
     ) internal virtual returns (bool success, bytes memory result) {
+        //@note
+        //Intention
+        //  1) normalize value parameter
+        //      1.1) max => use contract balance
+        //      1.2) check not greater than balance
+        //  2) record onBehalfOfAccount, determine operatorAuthenticated
+        //      2.1) if owner call, self-call, or controlCollateral in progress -> clear operatorAuthenticated
+        //      2.2) else                                                       -> set it
+        //  3) external call with forwarded value/data/EC
+        //  4) restore executionContext from cache
+        //Follow-up
+        //  4) Why do we need to restore execution context here? We already mutated it in 2)
+        //      -> 3) can change EC
+        //Assumption
+        //  - msg.sender is valid: when not owner/self/controlCollateral, it must be an authorized operator
+        //  - executionContext mutations are safe
+
         if (value == type(uint256).max) {
             value = address(this).balance;
         } else if (value > address(this).balance) {
@@ -852,16 +1161,26 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
         // target contract is equal to the msg.sender in call() and batch(), or when the controlCollateral is in
         // progress (in which case the operatorAuthenticated is not relevant)
         if (
-            haveCommonOwnerInternal(onBehalfOfAccount, msgSender) || targetContract == msg.sender
-                || targetContract == address(this) || contextCache.isControlCollateralInProgress()
+            haveCommonOwnerInternal(onBehalfOfAccount, msgSender) ||
+            targetContract == msg.sender ||
+            targetContract == address(this) ||
+            contextCache.isControlCollateralInProgress()
         ) {
-            executionContext = contextCache.setOnBehalfOfAccount(onBehalfOfAccount).clearOperatorAuthenticated();
+            executionContext = contextCache
+                .setOnBehalfOfAccount(onBehalfOfAccount)
+                .clearOperatorAuthenticated();
         } else {
-            executionContext = contextCache.setOnBehalfOfAccount(onBehalfOfAccount).setOperatorAuthenticated();
+            executionContext = contextCache
+                .setOnBehalfOfAccount(onBehalfOfAccount)
+                .setOperatorAuthenticated();
         }
 
         emit CallWithContext(
-            msgSender, getAddressPrefixInternal(onBehalfOfAccount), onBehalfOfAccount, targetContract, bytes4(data)
+            msgSender,
+            getAddressPrefixInternal(onBehalfOfAccount),
+            onBehalfOfAccount,
+            targetContract,
+            bytes4(data)
         );
 
         (success, result) = targetContract.call{value: value}(data);
@@ -885,6 +1204,18 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
         uint256 value,
         bytes calldata data
     ) internal virtual returns (bool success, bytes memory result) {
+        //@note
+        //Intention
+        //  1) target is EVC
+        //      Ensure NO `onBehalfOfAccount`, NO `value`
+        //      Use `delegatecall` so that `msg.sender` is preserved
+        //  2) target is not EVC
+        //      If target is not `msg.sender` -> authenticate caller
+        //      Forward the call via callWithContextInternal to set execution context.
+        //Assumption
+        //  - authenticateCaller reverts when unauthorized.
+        //  - callWithContextInternal handles context preservation and restoration.
+
         if (targetContract == address(this)) {
             if (onBehalfOfAccount != address(0)) {
                 revert EVC_InvalidAddress();
@@ -900,10 +1231,19 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
             // when the target contract is equal to the msg.sender, both in call() and batch(), authentication is not
             // required
             if (targetContract != msg.sender) {
-                authenticateCaller({account: onBehalfOfAccount, allowOperator: true, checkLockdownMode: true});
+                authenticateCaller({
+                    account: onBehalfOfAccount,
+                    allowOperator: true,
+                    checkLockdownMode: true
+                });
             }
 
-            (success, result) = callWithContextInternal(targetContract, onBehalfOfAccount, value, data);
+            (success, result) = callWithContextInternal(
+                targetContract,
+                onBehalfOfAccount,
+                value,
+                data
+            );
         }
     }
 
@@ -914,13 +1254,23 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     /// accounts and vaults before restoring the execution context to the cached state.
     /// @param contextCache The cached execution context to restore from.
     function restoreExecutionContext(EC contextCache) internal virtual {
+        //@note
+        //Intention
+        //  1) Defer check if needed
+        //  2) Restore EC
+
+        //1 {
         if (!contextCache.areChecksDeferred()) {
-            executionContext = contextCache.setChecksInProgress().setOnBehalfOfAccount(address(0));
+            executionContext = contextCache
+                .setChecksInProgress()
+                .setOnBehalfOfAccount(address(0));
 
             checkStatusAll(SetType.Account);
             checkStatusAll(SetType.Vault);
         }
+        //} 1
 
+        //2
         executionContext = contextCache;
     }
 
@@ -932,22 +1282,58 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     /// @param account The account address to check the status for.
     /// @return isValid A boolean indicating if the account status is valid.
     /// @return result The bytes returned from the controller call, indicating the account status.
-    function checkAccountStatusInternal(address account) internal virtual returns (bool isValid, bytes memory result) {
-        SetStorage storage accountControllersStorage = accountControllers[account];
+    function checkAccountStatusInternal(
+        address account
+    ) internal virtual returns (bool isValid, bytes memory result) {
+        //@note
+        //Intention
+        //  1) read controller set of account
+        //  2) quick controller checks:
+        //      if none          -> valid
+        //      if more than one -> invalid (controller violation)
+        //  3) call controller.staticcall(checkAccountStatus(account, collateral))
+        //  4) if valid -> refresh controller set
+        //      keep same controller, numElements and stamp
+        //      update metadata with current timestamp
+        //Follow-up
+        //  4)
+        //      Why do we only update metadata but use 4 assignments?
+        //      Don't revert if not valid?
+
+        //1 {
+        SetStorage storage accountControllersStorage = accountControllers[
+            account
+        ];
         uint256 numOfControllers = accountControllersStorage.numElements;
         address controller = accountControllersStorage.firstElement;
         uint8 stamp = accountControllersStorage.stamp;
+        //} 1
 
+        //2 {
         if (numOfControllers == 0) return (true, "");
-        else if (numOfControllers > 1) return (false, abi.encodeWithSelector(EVC_ControllerViolation.selector));
+        else if (numOfControllers > 1)
+            return (
+                false,
+                abi.encodeWithSelector(EVC_ControllerViolation.selector)
+            );
+        //} 2
 
+        //3 {
         bool success;
         (success, result) = controller.staticcall(
-            abi.encodeCall(IVault.checkAccountStatus, (account, accountCollaterals[account].get()))
+            abi.encodeCall(
+                IVault.checkAccountStatus,
+                (account, accountCollaterals[account].get())
+            )
         );
+        //} 3
 
-        isValid = success && result.length == 32
-            && abi.decode(result, (bytes32)) == bytes32(IVault.checkAccountStatus.selector);
+        //4 {
+        isValid =
+            success &&
+            result.length == 32 &&
+            abi.decode(result, (bytes32)) ==
+            bytes32(IVault.checkAccountStatus.selector);
 
         if (isValid) {
             accountControllersStorage.numElements = uint8(numOfControllers);
@@ -955,23 +1341,26 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
             accountControllersStorage.metadata = uint80(block.timestamp);
             accountControllersStorage.stamp = stamp;
         }
+        //} 4
 
         emit AccountStatusCheck(account, controller);
     }
 
-    function requireAccountStatusCheckInternal(address account) internal virtual {
-        (bool isValid, bytes memory result) = checkAccountStatusInternal(account);
+    function requireAccountStatusCheckInternal(
+        address account
+    ) internal virtual {
+        (bool isValid, bytes memory result) = checkAccountStatusInternal(
+            account
+        );
 
         if (!isValid) {
             revertBytes(result);
         }
     }
 
-    function requireAccountStatusCheckInternalNonReentrantChecks(address account)
-        internal
-        virtual
-        nonReentrantChecksAcquireLock
-    {
+    function requireAccountStatusCheckInternalNonReentrantChecks(
+        address account
+    ) internal virtual nonReentrantChecksAcquireLock {
         requireAccountStatusCheckInternal(account);
     }
 
@@ -980,12 +1369,27 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     /// @param vault The address of the vault to check the status for.
     /// @return isValid A boolean indicating if the vault status is valid.
     /// @return result The bytes returned from the vault call, indicating the vault status.
-    function checkVaultStatusInternal(address vault) internal virtual returns (bool isValid, bytes memory result) {
+    function checkVaultStatusInternal(
+        address vault
+    ) internal virtual returns (bool isValid, bytes memory result) {
+        //@note
+        //Intention
+        //  External call: vault.checkVaultStatus()
+        //  Valid if
+        //      call doesn't revert
+        //      return data is exactly 32 bytes
+        //      return data is a magic value
+
         bool success;
-        (success, result) = vault.call(abi.encodeCall(IVault.checkVaultStatus, ()));
+        (success, result) = vault.call(
+            abi.encodeCall(IVault.checkVaultStatus, ())
+        );
 
         isValid =
-            success && result.length == 32 && abi.decode(result, (bytes32)) == bytes32(IVault.checkVaultStatus.selector);
+            success &&
+            result.length == 32 &&
+            abi.decode(result, (bytes32)) ==
+            bytes32(IVault.checkVaultStatus.selector);
 
         emit VaultStatusCheck(vault);
     }
@@ -998,11 +1402,9 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
         }
     }
 
-    function requireVaultStatusCheckInternalNonReentrantChecks(address vault)
-        internal
-        virtual
-        nonReentrantChecksAcquireLock
-    {
+    function requireVaultStatusCheckInternalNonReentrantChecks(
+        address vault
+    ) internal virtual nonReentrantChecksAcquireLock {
         requireVaultStatusCheckInternal(vault);
     }
 
@@ -1013,26 +1415,40 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     /// @param setType The type of set to perform the status checks on, either accounts or vaults.
     function checkStatusAll(SetType setType) internal virtual {
         setType == SetType.Account
-            ? accountStatusChecks.forEachAndClear(requireAccountStatusCheckInternal)
-            : vaultStatusChecks.forEachAndClear(requireVaultStatusCheckInternal);
+            ? accountStatusChecks.forEachAndClear(
+                requireAccountStatusCheckInternal
+            )
+            : vaultStatusChecks.forEachAndClear(
+                requireVaultStatusCheckInternal
+            );
     }
 
-    function checkStatusAllWithResult(SetType setType)
-        internal
-        virtual
-        returns (StatusCheckResult[] memory checksResult)
-    {
+    function checkStatusAllWithResult(
+        SetType setType
+    ) internal virtual returns (StatusCheckResult[] memory checksResult) {
+        //@note
+        //Intention
+        //  Decode result of `forEachAndClearWithResult` into `StatusCheckResult[]`
+
         bytes[] memory callbackResult = setType == SetType.Account
-            ? accountStatusChecks.forEachAndClearWithResult(checkAccountStatusInternal)
-            : vaultStatusChecks.forEachAndClearWithResult(checkVaultStatusInternal);
+            ? accountStatusChecks.forEachAndClearWithResult(
+                checkAccountStatusInternal
+            )
+            : vaultStatusChecks.forEachAndClearWithResult(
+                checkVaultStatusInternal
+            );
 
         uint256 length = callbackResult.length;
         checksResult = new StatusCheckResult[](length);
 
         for (uint256 i; i < length; ++i) {
-            (address checkedAddress, bool isValid, bytes memory result) =
-                abi.decode(callbackResult[i], (address, bool, bytes));
-            checksResult[i] = StatusCheckResult({checkedAddress: checkedAddress, isValid: isValid, result: result});
+            (address checkedAddress, bool isValid, bytes memory result) = abi
+                .decode(callbackResult[i], (address, bool, bytes));
+            checksResult[i] = StatusCheckResult({
+                checkedAddress: checkedAddress,
+                isValid: isValid,
+                result: result
+            });
         }
     }
 
@@ -1044,11 +1460,15 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     /// future-proof and would need to be updated.
     /// @param signer The address of the signer to validate.
     /// @return bool Returns true if the signer is valid, false otherwise.
-    function isSignerValid(address signer) internal pure virtual returns (bool) {
+    function isSignerValid(
+        address signer
+    ) internal pure virtual returns (bool) {
         // not valid if the signer address falls into any of the precompiles/predeploys
         // addresses space (depends on the chain ID).
-        return !haveCommonOwnerInternal(signer, address(0)) && !haveCommonOwnerInternal(signer, EIP_7587_PRECOMPILES)
-            && !haveCommonOwnerInternal(signer, COMMON_PREDEPLOYS);
+        return
+            !haveCommonOwnerInternal(signer, address(0)) &&
+            !haveCommonOwnerInternal(signer, EIP_7587_PRECOMPILES) &&
+            !haveCommonOwnerInternal(signer, COMMON_PREDEPLOYS);
     }
 
     /// @notice Computes the permit hash for a given set of parameters.
@@ -1069,11 +1489,21 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
         uint256 value,
         bytes calldata data
     ) internal view returns (bytes32 permitHash) {
-        bytes32 domainSeparator =
-            block.chainid == CACHED_CHAIN_ID ? CACHED_DOMAIN_SEPARATOR : calculateDomainSeparator();
+        bytes32 domainSeparator = block.chainid == CACHED_CHAIN_ID
+            ? CACHED_DOMAIN_SEPARATOR
+            : calculateDomainSeparator();
 
         bytes32 structHash = keccak256(
-            abi.encode(PERMIT_TYPEHASH, signer, sender, nonceNamespace, nonce, deadline, value, keccak256(data))
+            abi.encode(
+                PERMIT_TYPEHASH,
+                signer,
+                sender,
+                nonceNamespace,
+                nonce,
+                deadline,
+                value,
+                keccak256(data)
+            )
         );
 
         // This code overwrites the two most significant bytes of the free memory pointer,
@@ -1095,7 +1525,10 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     /// @param hash The hash of the signed data.
     /// @param signature The signature to recover the signer from.
     /// @return signer The address of the signer, or the zero address if signature recovery fails.
-    function recoverECDSASigner(bytes32 hash, bytes memory signature) internal pure returns (address signer) {
+    function recoverECDSASigner(
+        bytes32 hash,
+        bytes memory signature
+    ) internal pure returns (address signer) {
         if (signature.length != 65) return address(0);
 
         bytes32 r;
@@ -1120,7 +1553,10 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
         // with 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141 - s1 and flip v from 27 to 28 or
         // vice versa. If your library also generates signatures with 0/1 for v instead 27/28, add 27 to v to accept
         // these malleable signatures as well.
-        if (uint256(s) > 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0) {
+        if (
+            uint256(s) >
+            0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0
+        ) {
             return address(0);
         }
 
@@ -1145,17 +1581,24 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     ) internal view returns (bool isValid) {
         if (signer.code.length == 0) return false;
 
-        (bool success, bytes memory result) =
-            signer.staticcall(abi.encodeCall(IERC1271.isValidSignature, (hash, signature)));
+        (bool success, bytes memory result) = signer.staticcall(
+            abi.encodeCall(IERC1271.isValidSignature, (hash, signature))
+        );
 
-        isValid = success && result.length == 32
-            && abi.decode(result, (bytes32)) == bytes32(IERC1271.isValidSignature.selector);
+        isValid =
+            success &&
+            result.length == 32 &&
+            abi.decode(result, (bytes32)) ==
+            bytes32(IERC1271.isValidSignature.selector);
     }
 
     /// @notice Calculates the EIP-712 domain separator for the contract.
     /// @return The calculated EIP-712 domain separator as a bytes32 value.
     function calculateDomainSeparator() internal view returns (bytes32) {
-        return keccak256(abi.encode(TYPE_HASH, HASHED_NAME, block.chainid, address(this)));
+        return
+            keccak256(
+                abi.encode(TYPE_HASH, HASHED_NAME, block.chainid, address(this))
+            );
     }
 
     // Auxiliary functions
@@ -1165,7 +1608,10 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     /// Otherwise, it returns `msg.sender`.
     /// @return The address of the message sender or the account on behalf of which the call is made.
     function _msgSender() internal view virtual returns (address) {
-        return inPermitSelfCall() ? executionContext.getOnBehalfOfAccount() : msg.sender;
+        return
+            inPermitSelfCall()
+                ? executionContext.getOnBehalfOfAccount()
+                : msg.sender;
     }
 
     /// @notice Checks if the contract is in the context of a permit self-call.
@@ -1179,7 +1625,13 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     /// @param account The first account address to compare.
     /// @param otherAccount The second account address to compare.
     /// @return result True if the accounts have a common owner, false otherwise.
-    function haveCommonOwnerInternal(address account, address otherAccount) internal pure returns (bool result) {
+    function haveCommonOwnerInternal(
+        address account,
+        address otherAccount
+    ) internal pure returns (bool result) {
+        //@note
+        //Intention
+        // Is first 19 bits of `account` and `otherAccount` equal? (i.e. do they have the same addressPrefix?)
         assembly {
             result := lt(xor(account, otherAccount), 0x100)
         }
@@ -1190,7 +1642,12 @@ contract EthereumVaultConnector is Events, Errors, TransientStorage, IEVC {
     /// address size to 19 bytes.
     /// @param account The account address to compute the prefix for.
     /// @return The computed address prefix as a bytes19 value.
-    function getAddressPrefixInternal(address account) internal pure returns (bytes19) {
+    function getAddressPrefixInternal(
+        address account
+    ) internal pure returns (bytes19) {
+        //@note
+        //Intention
+        // bytes19(account >> 8)
         return bytes19(uint152(uint160(account) >> ACCOUNT_ID_OFFSET));
     }
 

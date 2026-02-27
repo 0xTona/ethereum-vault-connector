@@ -20,28 +20,52 @@ type EC is uint256;
 /// @dev - simulation flag - used to indicate that the currently executed batch call is a simulation
 /// @dev - stamp - dummy value for optimization purposes
 library ExecutionContext {
+    //@note
+    // Intention
+    //  - ON_BEHALF_OF_ACCOUNT
+    //  - CHECKS_DEFERRED
+    //      Skip vault/account status checks
+    //      During a batch we only want to run the expensive validations once, not before every inner call
+    //  - CHECKS_IN_PROGRESS
+    //      Set while checking status flow
+    //      Prevents re‑entrancy to EVC during status checks
+    //  - CONTROL_COLLATERAL_IN_PROGRESS
+    //      lock during control‑collateral flow to prevent nested operations
+    //  - OPERATOR_AUTHENTICATED: indicates caller was authenticated via the
+    //    account operator mechanism
+    //  - SIMULATION: marks a batch as a dry‑run so fees/side‑effects are ignored
+
     uint256 internal constant ON_BEHALF_OF_ACCOUNT_MASK =
         0x000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
-    uint256 internal constant CHECKS_DEFERRED_MASK = 0x0000000000000000000000FF0000000000000000000000000000000000000000;
+    uint256 internal constant CHECKS_DEFERRED_MASK =
+        0x0000000000000000000000FF0000000000000000000000000000000000000000;
     uint256 internal constant CHECKS_IN_PROGRESS_MASK =
         0x00000000000000000000FF000000000000000000000000000000000000000000;
     uint256 internal constant CONTROL_COLLATERAL_IN_PROGRESS_LOCK_MASK =
         0x000000000000000000FF00000000000000000000000000000000000000000000;
     uint256 internal constant OPERATOR_AUTHENTICATED_MASK =
         0x0000000000000000FF0000000000000000000000000000000000000000000000;
-    uint256 internal constant SIMULATION_MASK = 0x00000000000000FF000000000000000000000000000000000000000000000000;
+    uint256 internal constant SIMULATION_MASK =
+        0x00000000000000FF000000000000000000000000000000000000000000000000;
     uint256 internal constant STAMP_OFFSET = 200;
 
     // None of the functions below modifies the state. All the functions operate on the copy
     // of the execution context and return its modified value as a result. In order to update
     // one should use the result of the function call as a new execution context value.
 
-    function getOnBehalfOfAccount(EC self) internal pure returns (address result) {
+    function getOnBehalfOfAccount(
+        EC self
+    ) internal pure returns (address result) {
         result = address(uint160(EC.unwrap(self) & ON_BEHALF_OF_ACCOUNT_MASK));
     }
 
-    function setOnBehalfOfAccount(EC self, address account) internal pure returns (EC result) {
-        result = EC.wrap((EC.unwrap(self) & ~ON_BEHALF_OF_ACCOUNT_MASK) | uint160(account));
+    function setOnBehalfOfAccount(
+        EC self,
+        address account
+    ) internal pure returns (EC result) {
+        result = EC.wrap(
+            (EC.unwrap(self) & ~ON_BEHALF_OF_ACCOUNT_MASK) | uint160(account)
+        );
     }
 
     function areChecksDeferred(EC self) internal pure returns (bool result) {
@@ -60,31 +84,48 @@ library ExecutionContext {
         result = EC.wrap(EC.unwrap(self) | CHECKS_IN_PROGRESS_MASK);
     }
 
-    function isControlCollateralInProgress(EC self) internal pure returns (bool result) {
-        result = EC.unwrap(self) & CONTROL_COLLATERAL_IN_PROGRESS_LOCK_MASK != 0;
+    function isControlCollateralInProgress(
+        EC self
+    ) internal pure returns (bool result) {
+        result =
+            EC.unwrap(self) & CONTROL_COLLATERAL_IN_PROGRESS_LOCK_MASK != 0;
     }
 
-    function setControlCollateralInProgress(EC self) internal pure returns (EC result) {
-        result = EC.wrap(EC.unwrap(self) | CONTROL_COLLATERAL_IN_PROGRESS_LOCK_MASK);
+    function setControlCollateralInProgress(
+        EC self
+    ) internal pure returns (EC result) {
+        result = EC.wrap(
+            EC.unwrap(self) | CONTROL_COLLATERAL_IN_PROGRESS_LOCK_MASK
+        );
     }
 
-    function isOperatorAuthenticated(EC self) internal pure returns (bool result) {
+    function isOperatorAuthenticated(
+        EC self
+    ) internal pure returns (bool result) {
         result = EC.unwrap(self) & OPERATOR_AUTHENTICATED_MASK != 0;
     }
 
-    function setOperatorAuthenticated(EC self) internal pure returns (EC result) {
+    function setOperatorAuthenticated(
+        EC self
+    ) internal pure returns (EC result) {
         result = EC.wrap(EC.unwrap(self) | OPERATOR_AUTHENTICATED_MASK);
     }
 
-    function clearOperatorAuthenticated(EC self) internal pure returns (EC result) {
+    function clearOperatorAuthenticated(
+        EC self
+    ) internal pure returns (EC result) {
         result = EC.wrap(EC.unwrap(self) & ~OPERATOR_AUTHENTICATED_MASK);
     }
 
-    function isSimulationInProgress(EC self) internal pure returns (bool result) {
+    function isSimulationInProgress(
+        EC self
+    ) internal pure returns (bool result) {
         result = EC.unwrap(self) & SIMULATION_MASK != 0;
     }
 
-    function setSimulationInProgress(EC self) internal pure returns (EC result) {
+    function setSimulationInProgress(
+        EC self
+    ) internal pure returns (EC result) {
         result = EC.wrap(EC.unwrap(self) | SIMULATION_MASK);
     }
 }
